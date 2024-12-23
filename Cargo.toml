@@ -1,0 +1,15 @@
+[workspace]
+members = ["rdxusb-protocol"]
+
+[package]
+name = "rdxusb"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+bytemuck = { version = "1.16.1", features = ["derive", "extern_crate_std"] }
+nusb = { version = "0.1.12", default-features  = false }
+tokio = { version = "1.41.1", features = ["full"] }
+rdxusb-protocol = { version = "0.1.0", path = "rdxusb-protocol"}
+async-ringbuf = { version = "0.3.1", features = ["alloc"] }
+ringbuf = "0.4.7"
