@@ -4,6 +4,8 @@
 //use std::time::Instant;
 
 
+use std::fmt::Display;
+
 use bytemuck::AnyBitPattern;
 use nusb::{transfer::{ControlIn, ControlOut, ControlType, Recipient, RequestBuffer}, DeviceInfo};
 use rdxusb_protocol::{RdxUsbCtrl, RdxUsbDeviceInfo, RdxUsbFsPacket};
@@ -74,6 +76,25 @@ impl From<bytemuck::PodCastError> for RdxUsbHostError {
     }
 }
 
+impl Display for RdxUsbHostError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            RdxUsbHostError::UnsupportedProtocol => write!(f, "Unsupported protocol"),
+            RdxUsbHostError::NoInterface => write!(f, "No valid USB interface"),
+            RdxUsbHostError::NusbError(error) => write!(f, "nusb error: {error}"),
+            RdxUsbHostError::TransferCancelled => write!(f, "Transfer cancelled"),
+            RdxUsbHostError::EndpointStall => write!(f, "Endpoint stall"),
+            RdxUsbHostError::DeviceDisconnected => write!(f, "Device disconnected"),
+            RdxUsbHostError::UsbFault => write!(f, "USB fault"),
+            RdxUsbHostError::TransferUnknownError => write!(f, "Unknown transfer error"),
+            RdxUsbHostError::DataDecodeError => write!(f, "Received undecodable data")
+        }
+    }
+}
+impl core::error::Error for RdxUsbHostError {}
+
+
+
 pub type RdxUsbHostResult<T> = Result<T, RdxUsbHostError>;
 
 impl RdxUsbFsHost {
@@ -82,7 +103,7 @@ impl RdxUsbFsHost {
     pub async fn open_device(dev_info: DeviceInfo, rx_q_size: usize) -> RdxUsbHostResult<(Self, Vec<RdxUsbChannel>)> {
 
         let Some(iface) = dev_info.interfaces().find(|iface| {
-            iface.class() == 0xff && iface.subclass() == 0xff && iface.protocol() == 0xff
+            iface.class() == 0xff && iface.subclass() == 0x0 && iface.protocol() == 0x0
         }) else { return Err(RdxUsbHostError::NoInterface); };
 
         let iface_idx = iface.interface_number();
@@ -129,11 +150,14 @@ impl RdxUsbFsHost {
 
         loop {
             let buf = read_queue.next_complete().await.into_result()?;
+            //println!("Received message: len={} {buf:?}", buf.len());
             if let Ok(pkt) = bytemuck::try_from_bytes::<RdxUsbFsPacket>(buf.as_slice()) {
-                if await_on_full {
-                    self.rx_queue[pkt.channel as usize].push(pkt.clone()).await.ok();
-                } else {
-                    self.rx_queue[pkt.channel as usize].try_push(pkt.clone()).ok();
+                if (pkt.channel as usize) < self.rx_queue.len() {
+                    if await_on_full {
+                        self.rx_queue[pkt.channel as usize].push(pkt.clone()).await.ok();
+                    } else {
+                        self.rx_queue[pkt.channel as usize].try_push(pkt.clone()).ok();
+                    }
                 }
             } 
 

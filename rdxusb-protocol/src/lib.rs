@@ -49,6 +49,7 @@ pub struct RdxUsbDeviceInfo {
 #[repr(u8)]
 pub enum RdxUsbCtrl {
     DeviceInfo = 0,
+    ResetChannel = 1,
 }
 
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
