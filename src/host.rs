@@ -7,9 +7,10 @@
 use std::fmt::Display;
 
 use bytemuck::AnyBitPattern;
+use futures_util::StreamExt;
 use nusb::{transfer::{ControlIn, ControlOut, ControlType, Recipient, RequestBuffer}, DeviceInfo};
-use rdxusb_protocol::{RdxUsbCtrl, RdxUsbDeviceInfo, RdxUsbFsPacket};
-use ringbuf::storage::Heap;
+use rdxusb_protocol::{RdxUsbCtrl, RdxUsbDeviceInfo, RdxUsbFsPacket, ENDPOINT_OUT};
+use ringbuf::{storage::Heap, traits::Consumer};
 use async_ringbuf::{traits::{AsyncProducer, AsyncConsumer, Producer, Split}, AsyncHeapRb, AsyncRb};
 
 /*
@@ -42,6 +43,7 @@ pub struct RdxUsbFsHost {
 #[derive(Debug)]
 pub enum RdxUsbHostError {
     UnsupportedProtocol,
+    InvalidChannel,
     NoInterface,
     NusbError(nusb::Error),
     TransferCancelled, 
@@ -80,6 +82,7 @@ impl Display for RdxUsbHostError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             RdxUsbHostError::UnsupportedProtocol => write!(f, "Unsupported protocol"),
+            RdxUsbHostError::InvalidChannel => write!(f, "Invalid channel"),
             RdxUsbHostError::NoInterface => write!(f, "No valid USB interface"),
             RdxUsbHostError::NusbError(error) => write!(f, "nusb error: {error}"),
             RdxUsbHostError::TransferCancelled => write!(f, "Transfer cancelled"),
@@ -87,12 +90,11 @@ impl Display for RdxUsbHostError {
             RdxUsbHostError::DeviceDisconnected => write!(f, "Device disconnected"),
             RdxUsbHostError::UsbFault => write!(f, "USB fault"),
             RdxUsbHostError::TransferUnknownError => write!(f, "Unknown transfer error"),
-            RdxUsbHostError::DataDecodeError => write!(f, "Received undecodable data")
+            RdxUsbHostError::DataDecodeError => write!(f, "Received undecodable data"),
         }
     }
 }
 impl core::error::Error for RdxUsbHostError {}
-
 
 
 pub type RdxUsbHostResult<T> = Result<T, RdxUsbHostError>;
@@ -100,7 +102,7 @@ pub type RdxUsbHostResult<T> = Result<T, RdxUsbHostError>;
 impl RdxUsbFsHost {
     /// Opens the device with the [`DeviceInfo`] and specified rx queue buffer size.
     /// Returns a usb device handle
-    pub async fn open_device(dev_info: DeviceInfo, rx_q_size: usize) -> RdxUsbHostResult<(Self, Vec<RdxUsbChannel>)> {
+    pub async fn open_device(dev_info: DeviceInfo, rx_q_size: usize) -> RdxUsbHostResult<(Self, Vec<RdxUsbFsChannel>)> {
 
         let Some(iface) = dev_info.interfaces().find(|iface| {
             iface.class() == 0xff && iface.subclass() == 0x0 && iface.protocol() == 0x0
@@ -127,7 +129,7 @@ impl RdxUsbFsHost {
             //let (tx, rx) = tokio::sync::mpsc::channel(rx_q_size);
             let (prod, cons) = AsyncHeapRb::new(rx_q_size).split();
 
-            v.push(RdxUsbChannel {
+            v.push(RdxUsbFsChannel {
                 iface: iface.clone(),
                 channel: i,
                 rx_queue: cons,
@@ -182,15 +184,54 @@ impl RdxUsbFsHost {
         Self::get_device_info(&self.iface).await
     }
 
+    pub fn write_poller(&self, n_packets: usize) -> (RdxUsbFsWritePoller, RdxUsbFsWriter) {
+        RdxUsbFsWritePoller::new(self.iface.clone(), n_packets)
+    }
+
 }
 
-pub struct RdxUsbChannel {
+pub struct RdxUsbFsWriter(<AsyncRb<Heap<RdxUsbFsPacket>> as async_ringbuf::traits::Split>::Prod);
+
+impl RdxUsbFsWriter {
+    pub fn try_send(&mut self, packet: RdxUsbFsPacket) -> Option<RdxUsbFsPacket> {
+        self.0.try_push(packet).err()
+    }
+    pub async fn send(&mut self, packet: RdxUsbFsPacket) -> Result<(), RdxUsbFsPacket> {
+        self.0.push(packet).await
+    }
+}
+
+pub struct RdxUsbFsWritePoller {
+    iface: nusb::Interface,
+    tx_queue: <AsyncRb<Heap<RdxUsbFsPacket>> as async_ringbuf::traits::Split>::Cons,
+}
+
+impl RdxUsbFsWritePoller {
+    pub fn new(iface: nusb::Interface, n_packets: usize) -> (Self, RdxUsbFsWriter) {
+        let (prod, cons) = AsyncHeapRb::new(n_packets).split();
+
+        (Self { iface, tx_queue: cons, }, RdxUsbFsWriter(prod))
+    }
+
+    pub async fn poll(&mut self) -> Result<(), RdxUsbHostError> {
+        let mut buffer= Vec::with_capacity(64);
+        while let Some(msg) = self.tx_queue.next().await {
+            buffer.clear();
+            buffer.extend_from_slice(&msg.encode());
+            buffer = self.iface.bulk_out(ENDPOINT_OUT, buffer).await.into_result()?.reuse();
+        }
+        Ok(())
+    }
+}
+
+
+pub struct RdxUsbFsChannel {
     iface: nusb::Interface,
     channel: u8,
     rx_queue: <AsyncRb<Heap<RdxUsbFsPacket>> as async_ringbuf::traits::Split>::Cons,
 }
 
-impl RdxUsbChannel {
+impl RdxUsbFsChannel {
     pub async fn control_in_struct<T: AnyBitPattern>(&self, req: RdxUsbCtrl) -> RdxUsbHostResult<T> {
         let res = self.iface.control_in(ControlIn {
             control_type: ControlType::Vendor,
@@ -226,15 +267,18 @@ impl RdxUsbChannel {
         }
     }
 
-    pub async fn write(&mut self, pkt: RdxUsbFsPacket) -> RdxUsbHostResult<()> {
+    pub fn try_read(&mut self) -> Option<RdxUsbFsPacket> {
+        self.rx_queue.try_pop()
+    }
+
+    pub async fn write(&mut self, mut pkt: RdxUsbFsPacket) -> RdxUsbHostResult<()> {
+        pkt.channel = self.channel;
         let v = Vec::from(bytemuck::bytes_of(&pkt));
         self.iface.bulk_out(rdxusb_protocol::ENDPOINT_OUT, v).await.into_result()?;
         Ok(())
     }
 
     pub async fn write_buf(&mut self, vbuf: Vec<u8>) -> RdxUsbHostResult<Vec<u8>> {
-
         Ok(self.iface.bulk_out(rdxusb_protocol::ENDPOINT_OUT, vbuf).await.into_result()?.reuse())
     }
-
 }
