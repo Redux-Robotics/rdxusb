@@ -67,6 +67,31 @@ pub enum OperatingSystem {
     Osx,
 }
 
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum Binary {
+    Lib(&'static str),
+    Win(&'static str),
+    WinLib(&'static str),
+}
+
+impl Binary {
+    pub fn source_name(&self, name: &str) -> String {
+        match self {
+            Binary::Lib(s) => format!("lib{name}{s}"),
+            Binary::Win(s) => format!("{name}{s}"),
+            Binary::WinLib(s) => format!("{name}{s}"),
+        }
+    }
+
+    pub fn dest_name(&self, name: &str) -> String {
+        match self {
+            Binary::Lib(s) => format!("lib{name}{s}"),
+            Binary::Win(s) => format!("{name}{s}"),
+            Binary::WinLib(_) => format!("{name}.lib"),
+        }
+    }
+}
+
 impl OperatingSystem {
     pub const fn name(&self) -> &'static str {
         match self {
@@ -75,18 +100,18 @@ impl OperatingSystem {
             OperatingSystem::Osx => "osx",
         }
     }
-    pub const fn shared_artifacts(&self) -> &'static [&'static str] {
+    pub const fn shared_artifacts(&self) -> &'static [Binary] {
         match self {
-            OperatingSystem::Linux => &[".so"],
-            OperatingSystem::Windows => &[".pdb", ".lib", ".dll"],
-            OperatingSystem::Osx => &[".dylib"]
+            OperatingSystem::Linux => &[Binary::Lib(".so")],
+            OperatingSystem::Windows => &[Binary::Win(".pdb"), Binary::WinLib(".dll.lib"), Binary::Win(".dll"), Binary::Win("dll.exp")],
+            OperatingSystem::Osx => &[Binary::Lib(".dylib")]
         }
     }
-    pub const fn static_artifacts(&self) -> &'static [&'static str] {
+    pub const fn static_artifacts(&self) -> &'static [Binary] {
         match self {
-            OperatingSystem::Linux => &[".a"],
-            OperatingSystem::Windows => &[".lib"],
-            OperatingSystem::Osx => &[".a"]
+            OperatingSystem::Linux => &[Binary::Lib(".a")],
+            OperatingSystem::Windows => &[Binary::Win(".lib")],
+            OperatingSystem::Osx => &[Binary::Lib(".a")]
         }
     }
 }
@@ -352,9 +377,11 @@ pub fn build_maven(target: Target, group_id: &str, artifact_id: &str) -> anyhow:
         let artifacts = if build_config.is_static() { target_info.os.static_artifacts() } else { target_info.os.shared_artifacts() };
         let build_dir = target_dir().join(target_info.triple).join(if build_config.is_debug() { "debug" } else { "release" });
         // write the artifact to the zip
-        for artifact_suffix in artifacts {
-            let artifact_name = format!("lib{lib_name}{artifact_suffix}");
-            zip.start_file_from_path(format!("{}/{}", &base_path, &artifact_name), SimpleFileOptions::default())?;
+        for artifact_bin in artifacts {
+            let artifact_name = artifact_bin.source_name(lib_name.as_str());
+            let artifact_dest = artifact_bin.dest_name(lib_name.as_str());
+
+            zip.start_file_from_path(format!("{}/{}", &base_path, &artifact_dest), SimpleFileOptions::default())?;
             zip.write_all(std::fs::read(build_dir.join(artifact_name))?.as_slice())?;
         }
         zip.finish()?;
