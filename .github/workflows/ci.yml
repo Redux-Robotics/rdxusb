@@ -70,8 +70,6 @@ jobs:
         with:
           submodules: true
           fetch-depth: 0
-      - name: Fetch all history and metadata
-        run: git fetch --prune --unshallow
       - uses: actions-rust-lang/setup-rust-toolchain@v1
       - name: Build maven artifact
         run: cargo xtask ${{ matrix.build-options }}

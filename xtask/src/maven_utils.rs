@@ -18,6 +18,12 @@ const YEAR: &str = "2025";
 
 #[cfg(unix)]
 fn locate_roborio_toolchain() -> Option<PathBuf> {
+    match which::which("arm-frc2024-linux-gnueabi-gcc") {
+        // sometimes the roborio toolchain is already in PATH (e.g. in buildserver containers)
+        Ok(w) => { return Some(w.parent().unwrap().into()); }
+        Err(_) => {}
+    }
+
     // All unicies have their wpilib install in the home directory.
     let home = homedir::my_home().ok()??;
     let candidate = home.join(format!("wpilib/{YEAR}/roborio/bin"));
@@ -31,6 +37,12 @@ fn locate_roborio_toolchain() -> Option<PathBuf> {
 
 #[cfg(windows)]
 fn locate_roborio_toolchain() -> Option<PathBuf> {
+    match which::which("arm-frc2024-linux-gnueabi-gcc") {
+        // sometimes the roborio toolchain is already in PATH (e.g. in buildserver containers)
+        Ok(w) => { return Some(w.parent().unwrap().into()); }
+        Err(_) => {}
+    }
+
     // windows typically puts the roborio toolchain in C:\Users\Public for whatever reason
     let public = PathBuf::from(std::env::var("PUBLIC").unwrap_or("C:\\Users\\Public".into()));
     let candidate = public.join(format!("wpilib\\{YEAR}\\roborio\\bin"));
