@@ -16,7 +16,6 @@ fn target_dir() -> PathBuf {
 
 const YEAR: &str = "2025";
 
-#[cfg(unix)]
 fn locate_roborio_toolchain() -> Option<PathBuf> {
     match which::which("arm-frc2024-linux-gnueabi-gcc") {
         // sometimes the roborio toolchain is already in PATH (e.g. in buildserver containers)
@@ -24,41 +23,29 @@ fn locate_roborio_toolchain() -> Option<PathBuf> {
         Err(_) => {}
     }
 
-    // All unicies have their wpilib install in the home directory.
-    let home = homedir::my_home().ok()??;
-    let candidate = home.join(format!("wpilib/{YEAR}/roborio/bin"));
-    if candidate.exists() && candidate.is_dir() {
-        Some(candidate)
-    } else {
-        None
-    }
+    #[cfg(unix)]
+    let search_path = &[
+        // the roborio-cross container
+        PathBuf::from("/usr/local/roborio-academic/bin"),
+        // All unicies have their wpilib install in the home directory.
+        homedir::my_home().ok()??.join(format!("wpilib/{YEAR}/roborio/bin"))
+    ];
 
-}
+    #[cfg(windows)]
+    let search_path = &[
+        // windows typically puts the roborio toolchain in C:\Users\Public for whatever reason
+        PathBuf::from(std::env::var("PUBLIC").unwrap_or("C:\\Users\\Public".into()))
+            .join(format!("wpilib\\{YEAR}\\roborio\\bin")),
+        homedir::my_home().ok()??.join(format!("wpilib\\{YEAR}\\roborio\\bin"))
+    ];
 
-#[cfg(windows)]
-fn locate_roborio_toolchain() -> Option<PathBuf> {
-    match which::which("arm-frc2024-linux-gnueabi-gcc") {
-        // sometimes the roborio toolchain is already in PATH (e.g. in buildserver containers)
-        Ok(w) => { return Some(w.parent().unwrap().into()); }
-        Err(_) => {}
-    }
-
-    // windows typically puts the roborio toolchain in C:\Users\Public for whatever reason
-    let public = PathBuf::from(std::env::var("PUBLIC").unwrap_or("C:\\Users\\Public".into()));
-    let candidate = public.join(format!("wpilib\\{YEAR}\\roborio\\bin"));
-    if candidate.exists() && candidate.is_dir() {
-        Some(candidate)
-    } else {
-        let home = homedir::my_home().ok()??;
-        let candidate = home.join(format!("wpilib\\{YEAR}\\roborio\\bin"));
+    for candidate in search_path {
         if candidate.exists() && candidate.is_dir() {
-            Some(candidate)
-        } else {
-            None
+            return Some(candidate.clone());
         }
     }
+    None
 }
-
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum Target {
@@ -183,16 +170,10 @@ impl Target {
 
         match self {
             Target::LinuxAthena => {
-                let mut big_tc: Option<PathBuf> = None;
-                let roborio_toolchain: &[&str] = match locate_roborio_toolchain() {
-                    Some(tc) => { 
-                        big_tc.replace(tc);
-                        &[big_tc.as_ref().unwrap().to_str().unwrap()] 
-                    }
-                    None => &[],
-                };
-                cargo_build(&self.info().triple, false, roborio_toolchain)?;
-                cargo_build(&self.info().triple, true, roborio_toolchain)?;
+                let roborio_toolchain = locate_roborio_toolchain()
+                    .expect(format!("Could not find roboRIO toolchain, is wpilib {YEAR} installed?").as_str());
+                cargo_build(&self.info().triple, false, &[roborio_toolchain.to_str().unwrap()])?;
+                cargo_build(&self.info().triple, true, &[roborio_toolchain.to_str().unwrap()])?;
             }
             Target::OsxUniversal => {
                 // osxuniversal needs to build twice and then lipo all the artifacts together
