@@ -183,11 +183,16 @@ impl Target {
 
         match self {
             Target::LinuxAthena => {
-                let roborio_toolchain = locate_roborio_toolchain()
-                    .expect("Could not locate roborio toolchain, is wpilib 2025 installed?")
-                    .to_str().unwrap().to_string();
-                cargo_build(&self.info().triple, false, &[roborio_toolchain.as_str()])?;
-                cargo_build(&self.info().triple, true, &[roborio_toolchain.as_str()])?;
+                let mut big_tc: Option<PathBuf> = None;
+                let roborio_toolchain: &[&str] = match locate_roborio_toolchain() {
+                    Some(tc) => { 
+                        big_tc.replace(tc);
+                        &[big_tc.as_ref().unwrap().to_str().unwrap()] 
+                    }
+                    None => &[],
+                };
+                cargo_build(&self.info().triple, false, roborio_toolchain)?;
+                cargo_build(&self.info().triple, true, roborio_toolchain)?;
             }
             Target::OsxUniversal => {
                 // osxuniversal needs to build twice and then lipo all the artifacts together

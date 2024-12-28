@@ -55,7 +55,7 @@ jobs:
           - os: windows-2022
             artifact-name: Win64
             architecture: x64
-            build-options: "windowsx64"
+            build-options: "windowsx86-x64"
           - os: macos-14
             artifact-name: macOS
             architecture: aarch64
