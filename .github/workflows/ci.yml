@@ -89,9 +89,9 @@ jobs:
         #combiner/products/build/allOutputs
       - uses: actions/download-artifact@v4
         with:
-          path: maven
+          path: artifacts
       - name: Flatten Artifacts
-        run: rsync -av --delete maven/*/* maven/
+        run: mkdir -p maven && rsync -av --delete artifacts/*/* maven/
       # - name: Combine (Release)
       #   if: |
       #     github.repository_owner == 'wpilibsuite' &&
