@@ -17,7 +17,7 @@ fn target_dir() -> PathBuf {
 const YEAR: &str = "2025";
 
 fn locate_roborio_toolchain() -> Option<PathBuf> {
-    match which::which("arm-frc2024-linux-gnueabi-gcc") {
+    match which::which(format!("arm-frc{YEAR}-linux-gnueabi-gcc")) {
         // sometimes the roborio toolchain is already in PATH (e.g. in buildserver containers)
         Ok(w) => { return Some(w.parent().unwrap().into()); }
         Err(_) => {}
@@ -304,6 +304,10 @@ pub fn calc_hashes(file_path: &Path) -> anyhow::Result<()> {
 
     Ok(())
 }
+#[cfg(unix)]
+const PATH_SEP: &str = "/";
+#[cfg(windows)]
+const PATH_SEP: &str = "\\";
 
 pub fn build_maven(target: Target, group_id: &str, artifact_id: &str) -> anyhow::Result<()> {
     eprintln!("Building target {target:?}");
@@ -311,7 +315,7 @@ pub fn build_maven(target: Target, group_id: &str, artifact_id: &str) -> anyhow:
     let cargo_toml_data = std::fs::read(project_root().join("Cargo.toml"))?;
     let manifest = cargo_toml::Manifest::from_slice(cargo_toml_data.as_slice())?;
     let version = manifest.package().version().to_string();
-    let group_id_as_path = PathBuf::from(OsString::from(group_id.replace(".", "/")));
+    let group_id_as_path = PathBuf::from(OsString::from(group_id.replace(".", PATH_SEP)));
     let lib_name = manifest.lib.unwrap().name.unwrap().clone();
     let target_info = target.info();
 
@@ -363,7 +367,7 @@ pub fn build_maven_zip(root_path: &Path, group_id: &str, artifact_id: &str, arti
     let cargo_toml_data = std::fs::read(project_root().join("Cargo.toml"))?;
     let manifest = cargo_toml::Manifest::from_slice(cargo_toml_data.as_slice())?;
     let version = manifest.package().version().to_string();
-    let group_id_as_path = PathBuf::from(OsString::from(group_id.replace(".", "/")));
+    let group_id_as_path = PathBuf::from(OsString::from(group_id.replace(".", PATH_SEP)));
 
     let maven = target_dir()
             .join("maven")
@@ -402,7 +406,7 @@ pub fn build_maven_metadata(group_id: &str, artifact_id: &str) -> anyhow::Result
     let cargo_toml_data = std::fs::read(project_root().join("Cargo.toml"))?;
     let manifest = cargo_toml::Manifest::from_slice(cargo_toml_data.as_slice())?;
     let version = manifest.package().version().to_string();
-    let group_id_as_path = PathBuf::from(OsString::from(group_id.replace(".", "/")));
+    let group_id_as_path = PathBuf::from(OsString::from(group_id.replace(".", PATH_SEP)));
 
     let maven = target_dir()
             .join("maven")
