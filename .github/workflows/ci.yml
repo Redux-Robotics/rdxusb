@@ -1,0 +1,113 @@
+name: CI
+
+#on: [workflow_dispatch]
+
+on: 
+  workflow_dispatch:
+  push:
+    tags:
+      - 'v[0-9]+.[0-9]+.[0-9]+'
+
+jobs:
+  build-docker:
+    strategy:
+      fail-fast: true
+      matrix:
+        include:
+          - container: wpilib/roborio-cross-ubuntu:2025-22.04
+            artifact-name: Athena
+            build-options: "linuxathena"
+          - container: wpilib/raspbian-cross-ubuntu:bookworm-22.04
+            artifact-name: Arm32
+            build-options: "linuxarm32"
+          - container: wpilib/aarch64-cross-ubuntu:bookworm-22.04
+            artifact-name: Arm64
+            build-options: "linuxarm64"
+          - container: wpilib/ubuntu-base:22.04
+            artifact-name: Linux
+            build-options: "linuxx86-64"
+    name: "Build - ${{ matrix.artifact-name }}"
+    runs-on: ubuntu-22.04
+    container: ${{ matrix.container }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: true
+          fetch-depth: 0
+      - name: Fetch all history and metadata
+        run: |
+          git config --global --add safe.directory /__w/${{ github.event.repository.name }}/${{ github.event.repository.name }}
+      - uses: actions-rust-lang/setup-rust-toolchain@v1
+      - name: Build maven artifact
+        run: cargo xtask ${{ matrix.build-options }}
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact-name }}
+          path: target/maven
+
+  build-host:
+    env: 
+      MACOSX_DEPLOYMENT_TARGET: 13.3
+    strategy:
+      fail-fast: true
+      matrix:
+        include:
+          - os: windows-2022
+            artifact-name: Win64
+            architecture: x64
+            build-options: "windowsx64"
+          - os: macos-14
+            artifact-name: macOS
+            architecture: aarch64
+            build-options: "osxuniversal"
+          #- os: macos-14
+          #  artifact-name: macOS-arm64
+          #  build-options:
+    name: "Build - ${{ matrix.artifact-name }}"
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: true
+          fetch-depth: 0
+      - name: Fetch all history and metadata
+        run: git fetch --prune --unshallow
+      - uses: actions-rust-lang/setup-rust-toolchain@v1
+      - name: Build maven artifact
+        run: cargo xtask ${{ matrix.build-options }}
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact-name }}
+          path: target/maven
+
+  combine:
+    name: Combine
+    needs: [build-docker, build-host]
+    runs-on: ubuntu-22.04
+    steps:
+        #combiner/products/build/allOutputs
+      - uses: actions/download-artifact@v4
+        with:
+          path: maven
+      - name: Flatten Artifacts
+        run: rsync -av --delete maven/*/* maven/
+      # - name: Combine (Release)
+      #   if: |
+      #     github.repository_owner == 'wpilibsuite' &&
+      #     startsWith(github.ref, 'refs/tags/v')
+      #   run: |
+      #     ./gradlew publish -Pthirdparty
+      #   working-directory: combiner
+      #   env:
+      #     RUN_AZURE_ARTIFACTORY_RELEASE: 'TRUE'
+      #     ARTIFACTORY_PUBLISH_USERNAME: ${{ secrets.ARTIFACTORY_USERNAME }}
+      #     ARTIFACTORY_PUBLISH_PASSWORD: ${{ secrets.ARTIFACTORY_PASSWORD }}
+      #- uses: actions/upload-artifact@v4
+      #  with:
+      #    name: Maven
+      #    path: ~/releases
+      - uses: actions/upload-artifact@v4
+        with:
+          name: rdxusb-${{github.ref_name}}
+          path: maven
+

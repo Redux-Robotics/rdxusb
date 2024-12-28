@@ -1,9 +1,9 @@
 [workspace]
-members = ["rdxusb-protocol", "rdxusb-test"]
+members = ["rdxusb-protocol", "rdxusb-test", "xtask"]
 
 [package]
 name = "rdxusb"
-version = "0.1.0"
+version = "2025.0.0"
 edition = "2021"
 authors = ["guineawheek <guineawheek@gmail.com>"]
 

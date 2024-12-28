@@ -1,10 +1,10 @@
-use std::{collections::HashMap, ffi::{CStr, CString}, sync::{Mutex, OnceLock}};
+use std::{collections::HashMap, ffi::{c_char, CStr, CString}, sync::{Mutex, OnceLock}};
 
 use rdxusb_protocol::RdxUsbPacket;
 
 use crate::event_loop::{self, EventLoopError};
 
-fn to_optional_string(cs: *const i8) -> Option<String> {
+fn to_optional_string(cs: *const c_char) -> Option<String> {
     if cs == core::ptr::null() {
         None
     } else { 
@@ -16,7 +16,7 @@ fn to_optional_string(cs: *const i8) -> Option<String> {
 /// 
 /// serial_number MUST be valid utf-8 if not a null pointer!!!
 /// passing in not-utf8 is Undefined Behavior.
-pub extern "C" fn rdxusb_open_device(vid: u16, pid: u16, serial_number: *const i8, close_on_dc: bool) -> i32 {
+pub extern "C" fn rdxusb_open_device(vid: u16, pid: u16, serial_number: *const c_char, close_on_dc: bool) -> i32 {
     let serial_number = to_optional_string(serial_number);
     event_loop::open_device(vid, pid, serial_number, close_on_dc).unwrap_or_else(|e| e as i32)
 }
