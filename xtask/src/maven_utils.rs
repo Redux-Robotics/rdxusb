@@ -25,10 +25,10 @@ fn locate_roborio_toolchain() -> Option<PathBuf> {
 
     #[cfg(unix)]
     let search_path = &[
-        // the roborio-cross container
-        PathBuf::from("/usr/local/roborio-academic/bin"),
         // All unicies have their wpilib install in the home directory.
-        homedir::my_home().ok()??.join(format!("wpilib/{YEAR}/roborio/bin"))
+        homedir::my_home().ok()??.join(format!("wpilib/{YEAR}/roborio/bin")),
+        // the roborio-cross container
+        PathBuf::from("/usr/local/bin"),
     ];
 
     #[cfg(windows)]
