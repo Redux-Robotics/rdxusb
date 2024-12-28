@@ -103,7 +103,7 @@ impl OperatingSystem {
     pub const fn shared_artifacts(&self) -> &'static [Binary] {
         match self {
             OperatingSystem::Linux => &[Binary::Lib(".so")],
-            OperatingSystem::Windows => &[Binary::Win(".pdb"), Binary::WinLib(".dll.lib"), Binary::Win(".dll"), Binary::Win("dll.exp")],
+            OperatingSystem::Windows => &[Binary::Win(".pdb"), Binary::WinLib(".dll.lib"), Binary::Win(".dll"), Binary::Win(".dll.exp")],
             OperatingSystem::Osx => &[Binary::Lib(".dylib")]
         }
     }
