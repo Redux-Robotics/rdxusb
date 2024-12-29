@@ -16,9 +16,9 @@ fn to_optional_string(cs: *const c_char) -> Option<String> {
 /// 
 /// serial_number MUST be valid utf-8 if not a null pointer!!!
 /// passing in not-utf8 is Undefined Behavior.
-pub extern "C" fn rdxusb_open_device(vid: u16, pid: u16, serial_number: *const c_char, close_on_dc: bool) -> i32 {
+pub extern "C" fn rdxusb_open_device(vid: u16, pid: u16, serial_number: *const c_char, close_on_dc: bool, buf_size: u64) -> i32 {
     let serial_number = to_optional_string(serial_number);
-    event_loop::open_device(vid, pid, serial_number, close_on_dc).unwrap_or_else(|e| e as i32)
+    event_loop::open_device(vid, pid, serial_number, close_on_dc, buf_size as usize).unwrap_or_else(|e| e as i32)
 }
 
 
@@ -31,6 +31,7 @@ pub extern "C" fn rdxusb_force_scan_devices() -> i32 {
 }
 
 pub extern "C" fn rdxusb_read_packets(handle_id: i32, channel: u8, packets: *mut RdxUsbPacket, max_packets: u64, packets_read: *mut u64) -> i32 {
+    if packets.is_null() || packets_read.is_null() { return EventLoopError::ERR_NULL_PTR; }
     let packets = unsafe { core::slice::from_raw_parts_mut(packets, max_packets as usize) };
     match event_loop::read_packets(handle_id, channel, packets) {
         Ok(w) => {
@@ -42,10 +43,17 @@ pub extern "C" fn rdxusb_read_packets(handle_id: i32, channel: u8, packets: *mut
 }
 
 pub extern "C" fn rdxusb_write_packets(handle_id: i32, packets: *const RdxUsbPacket, packets_len: u64, packets_written: *mut u64) -> i32 {
+    if packets.is_null() { return EventLoopError::ERR_NULL_PTR; }
+
     let packets = unsafe { core::slice::from_raw_parts(packets, packets_len as usize) };
     match event_loop::write_packets(handle_id, packets) {
         Ok(w) => {
-            unsafe { *packets_written = w as u64; }
+            unsafe { 
+                match packets_written.as_mut() {
+                    Some(p) => *p = w as u64,
+                    None => {}
+                }
+            }
             0
         }
         Err(e) => { e as i32 }
@@ -105,6 +113,10 @@ fn strncpy_into_buf(s: &CStr, dest: &mut [u8]) {
 
 /// if you pass in null pointers your program explodes. don't do that.
 pub extern "C" fn rdxusb_new_device_iterator(iter_id: *mut u64, n_devices: *mut u64) -> i32 {
+    if iter_id.is_null() || n_devices.is_null() {
+        return EventLoopError::ERR_NULL_PTR;
+    }
+
     DEVICE_INFOS.lock().unwrap().get_or_init(DeviceInfos::new);
     let Ok(mut info_lock) = DEVICE_INFOS.lock() else { return EventLoopError::ERR_EVENT_LOOP_CRASHED; };
     let infos = info_lock.get_mut().unwrap();
@@ -121,6 +133,11 @@ pub extern "C" fn rdxusb_new_device_iterator(iter_id: *mut u64, n_devices: *mut 
 
 /// passing in a null pointer is your fault. idiot.
 pub extern "C" fn rdxusb_get_device_in_iterator(iter_id: u64, device_idx: u64, device_entry: *mut RdxUsbDeviceEntry) -> i32 {
+    if device_entry.is_null() {
+        return EventLoopError::ERR_NULL_PTR;
+    }
+
+
     DEVICE_INFOS.lock().unwrap().get_or_init(DeviceInfos::new);
     let Ok(mut info_lock) = DEVICE_INFOS.lock() else { return EventLoopError::ERR_EVENT_LOOP_CRASHED; };
     let infos = info_lock.get_mut().unwrap();

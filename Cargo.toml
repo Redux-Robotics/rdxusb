@@ -1,5 +1,5 @@
 [workspace]
-members = ["rdxusb-protocol", "xtask"]
+members = ["rdxusb-event-test", "rdxusb-protocol", "xtask"]
 
 [package]
 name = "rdxusb"

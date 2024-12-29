@@ -38,9 +38,11 @@ impl EventLoopError {
     pub const ERR_CANNOT_LIST_DEVICES: i32 = -101;
     pub const ERR_DEVICE_ITER_INVALID: i32 = -102;
     pub const ERR_DEVICE_ITER_IDX_OUT_OF_RANGE: i32 = -103;
+    pub const ERR_NULL_PTR: i32 = -104;
     pub const ERR_DEVICE_NOT_OPENED: i32 = -200;
     pub const ERR_DEVICE_NOT_CONNECTED: i32 = -201;
     pub const ERR_CHANNEL_OUT_OF_RANGE: i32 = -202;
+
 }
 
 impl From<EventLoopError> for i32 {
@@ -151,6 +153,7 @@ pub struct EventLoop {
     pub devices: HashMap<i32, Device>,
     pub next_handle: i32,
     pub rt: Runtime,
+    pub hotplug_handle: tokio::task::JoinHandle<()>,
 }
 
 impl EventLoop {
@@ -159,11 +162,12 @@ impl EventLoop {
 
         // Enter the runtime so that `tokio::spawn` is available immediately.
         let _enter = rt.enter();
-        //rt.spawn(async move { run(state_async).await.unwrap(); });
+        let hotplug_handle = rt.spawn(hotplug());
         Self {
             devices: HashMap::new(),
             next_handle: 0i32,
             rt,
+            hotplug_handle,
         }
 
     }
@@ -213,8 +217,15 @@ pub fn try_acquire_event_loop<'a>() -> Result<EventLoopGuard<'a>, EventLoopError
 }
 
 
-pub async fn device_poller(id: i32, mut device_info_in: tokio::sync::watch::Receiver<Option<DeviceInfo>>, shutdown: Arc<tokio::sync::Notify>, close_on_dc: bool) {
-    loop  {
+pub async fn device_poller(
+    id: i32,
+    mut device_info_in: tokio::sync::watch::Receiver<Option<DeviceInfo>>,
+    shutdown: Arc<tokio::sync::Notify>,
+    close_on_dc: bool,
+    capacity: usize,
+) {
+    eprintln!("Device poller for task {id} started!");
+    loop {
         let dev_info = match device_info_in.changed().await {
             Ok(_) => {
                 match device_info_in.borrow_and_update().clone() {
@@ -224,12 +235,22 @@ pub async fn device_poller(id: i32, mut device_info_in: tokio::sync::watch::Rece
             }
             Err(_e) => { break; }
         };
+        eprintln!("poller: Acquired matching deviceinfo");
         //let Some(dev_info) = device_info_in.recv().await
 
 
         let device_id = dev_info.id();
-        let Ok((mut host, channels)) = RdxUsbFsHost::open_device(dev_info, 32).await else { continue; };
-        let (mut write_poller, writer) = host.write_poller(32);
+        let (mut host, channels) = match RdxUsbFsHost::open_device(dev_info, capacity).await {
+            Ok(a) => {
+                eprintln!("poller: Successfully opened device, opening write-poller");
+                a
+            }
+            Err(e) => {
+                eprintln!("poller: Could not open device: {e:?}");
+                continue;
+            }
+        };
+        let (mut write_poller, writer) = host.write_poller(capacity);
 
 
         let open_device = OpenDevice {
@@ -239,6 +260,7 @@ pub async fn device_poller(id: i32, mut device_info_in: tokio::sync::watch::Rece
             protocol: 0,
         };
         {
+            eprintln!("poller: Update open device");
             let mut event_loop = acquire_event_loop();
             event_loop.update_open_device(id, open_device);
         }
@@ -281,10 +303,13 @@ pub async fn hotplug() {
 }
 
 pub fn force_scan_devices(event_loop: EventLoopGuard) -> Result<EventLoopGuard, EventLoopError> {
+    eprintln!("Force scan devices triggered");
     let Ok(list_device_iter) = nusb::list_devices() else { return Err(EventLoopError::CannotListDevices); };
     for device_info in list_device_iter {
+        eprintln!("Found device: {device_info:?}");
         'device_loop: for device in event_loop.devices.values() {
             if device.matches_device_info(&device_info) {
+                eprintln!("Device matches deviceinfo, triggering hotplug");
                 device.device_info_out.send_replace(Some(device_info));
                 break 'device_loop;
             }
@@ -293,7 +318,8 @@ pub fn force_scan_devices(event_loop: EventLoopGuard) -> Result<EventLoopGuard, 
     Ok(event_loop)
 }
 
-pub fn open_device(vid: u16, pid: u16, serial_number: Option<String>, close_on_dc: bool) -> Result<i32, EventLoopError> {
+pub fn open_device(vid: u16, pid: u16, serial_number: Option<String>, close_on_dc: bool, capacity: usize) -> Result<i32, EventLoopError> {
+    eprintln!("Open device {vid:04x} {pid:04x} {serial_number:?} {close_on_dc}");
     let mut event_loop = try_acquire_event_loop()?;
 
     let maybe_existing = event_loop.devices.iter_mut().find_map(|(handle, device)| {
@@ -302,6 +328,7 @@ pub fn open_device(vid: u16, pid: u16, serial_number: Option<String>, close_on_d
         } else { None }
     });
     if let Some(existing_handle) = maybe_existing {
+        eprintln!("Device already opened under handle: {existing_handle}");
         force_scan_devices(event_loop)?;
         return Ok(existing_handle);
     }
@@ -313,7 +340,8 @@ pub fn open_device(vid: u16, pid: u16, serial_number: Option<String>, close_on_d
     event_loop.next_handle += 1;
     let shutdown = Arc::new(tokio::sync::Notify::new());
 
-    let device_poller_task = event_loop.rt.spawn(device_poller(handle, rx, shutdown.clone(), close_on_dc));
+    eprintln!("Spawn device poller for new handle {handle}");
+    let device_poller_task = event_loop.rt.spawn(device_poller(handle, rx, shutdown.clone(), close_on_dc, capacity));
     let device_entry = Device {
         vid,
         pid,

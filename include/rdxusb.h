@@ -1,12 +1,31 @@
 #pragma once
 #include <stdint.h>
 
+
+
 /** Extended (full 29-bit) frame. This is set on practically all FRC-related messages. */
 #define RDXUSB_MESSAGE_FLAG_EXT 0x80000000
 /** RTR frame */
 #define RDXUSB_MESSAGE_FLAG_RTR 0x40000000
 /** Error frame */
 #define RDXUSB_MESSAGE_FLAG_ERR 0x20000000
+
+/** The event loop has irrecoverably crashed. */
+#define RDXUSB_ERR_EVENT_LOOP_CRASHED -100
+/** The event loop cannot enumerate USB devices. */
+#define RDXUSB_ERR_CANNOT_LIST_DEVICES -101
+/** The device iterator handle is invalid. */
+#define RDXUSB_ERR_DEVICE_ITER_INVALID -102
+/** The device iterator index is out of range. */
+#define ERR_DEVICE_ITER_IDX_OUT_OF_RANGE -103
+/** A passed argument was null that should not be null. */
+#define RDXUSB_ERR_NULL_PTR -104
+/** The specified device handle is invalid. */
+#define RDXUSB_ERR_DEVICE_NOT_OPENED -200
+/** The specified device is not currently connected right now. */
+#define RDXUSB_ERR_DEVICE_NOT_CONNECTED -201
+/** The specified device channel is not valid for this device. */
+#define RDXUSB_ERR_CHANNEL_OUT_OF_RANGE -202
 
 #ifdef _MSC_VER
 #pragma pack(push, 4)
@@ -18,7 +37,7 @@ struct __attribute__((packed, aligned(4))) rdxusb_packet {
 #endif
     /** Timestamp since device power-on (nanoseconds) */
     uint64_t timestamp_ns;
-    /** CAN arbitration id. */
+    /** CAN-associated arbitration id. The top 3 bits are flags specified by the RDXUSB_MESSAGE_FLAG_* defines. */
     uint32_t arb_id;
     /** Data length code. */
     uint8_t dlc;
@@ -71,12 +90,17 @@ extern "C" {
  * @param pid USB product ID to match
  * @param serial_number an optional serial number string. This MUST be utf-8 or NULL.
  * @param close_on_dc if true, closes the device handle on device disconnect
+ * @param buf_size the maximum number of packets to buffer inbound/outbound
  * @return a non-negative device handle on success, negative on error
  */
-int32_t rdxusb_open_device(uint16_t vid, uint16_t pid, const char* serial_number, bool close_on_dc);
+int32_t rdxusb_open_device(uint16_t vid, uint16_t pid, const char* serial_number, bool close_on_dc, uint64_t buf_size);
 
 /**
  * Forces the RdxUsb event loop to rescan USB devices.
+ * 
+ * By default, the RdxUsb event loop will automatically reconnect devices via hotplug, 
+ * but if hotplug does not work, manually calling this function will rescan and potentially reconnect devices.
+ * 
  * @return 0 on success, negative on error
  */
 int32_t rdxusb_force_scan_devices(void);
@@ -102,7 +126,7 @@ int32_t rdxusb_read_packets(int32_t handle_id, uint8_t channel,
  * @param handle_id a handle id returned from rdxusb_open_device
  * @param packets a pointer to the packet buffer to write from. Must not be NULL.
  * @param packets_len the number of packets to write from the packet buffer.
- * @param packets_written pointer updated with how many packets were actually written. Must not be NULL.
+ * @param packets_written pointer updated with how many packets were actually written. Can be NULL.
  * @return 0 on success, negative on error
  */
 int32_t rdxusb_write_packets(int32_t handle_id, struct rdxusb_packet* packets, 
@@ -117,6 +141,16 @@ int32_t rdxusb_write_packets(int32_t handle_id, struct rdxusb_packet* packets,
  * @return 0 on success, negative on error.
  */
 int32_t rdxusb_close_device(int32_t handle_id);
+
+
+/**
+ * Closes all device handles.
+ * 
+ * If the handle ID is already closed or invalid, this returns 0.
+ * 
+ * @return 0 on success, negative on error.
+ */
+int32_t rdxusb_close_all_devices();
 
 /**
  * Creates a new USB device iterator.

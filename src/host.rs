@@ -111,7 +111,7 @@ impl RdxUsbFsHost {
         let iface_idx = iface.interface_number();
 
         let handle = dev_info.open()?;
-        handle.detach_kernel_driver(iface_idx)?;
+        handle.detach_kernel_driver(iface_idx).ok();
         let iface = handle.claim_interface(iface_idx)?;
         let cfg = Self::get_device_info(&iface).await?;
         let icount = cfg.n_channels;
