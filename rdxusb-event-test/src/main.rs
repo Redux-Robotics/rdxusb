@@ -3,7 +3,7 @@ use std::time::Duration;
 use rdxusb::RdxUsbPacket;
 
 fn main() {
-    let handle = rdxusb::c_api::rdxusb_open_device(0x16d0, 0x1278, c"00-0-0000-000-0-0".as_ptr(), false, 48);
+    let handle = rdxusb::c_api::rdxusb_open_device(0x16d0, 0x1278, c"02-0-0000-000-E-D".as_ptr(), false, 48);
     if handle < 0 {
         panic!("could not open device: {handle}");
     }
