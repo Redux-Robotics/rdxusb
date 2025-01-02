@@ -1,9 +1,5 @@
 #![allow(dead_code)]
 
-
-//use std::time::Instant;
-
-
 use std::fmt::Display;
 
 use bytemuck::AnyBitPattern;
@@ -13,30 +9,10 @@ use rdxusb_protocol::{RdxUsbCtrl, RdxUsbDeviceInfo, RdxUsbFsPacket, ENDPOINT_OUT
 use ringbuf::{storage::Heap, traits::Consumer};
 use async_ringbuf::{traits::{AsyncProducer, AsyncConsumer, Producer, Split}, AsyncHeapRb, AsyncRb};
 
-/*
-
-for channel in channels:
-
-
-pool:
- - acquire all free vecs
-
-client:
- - in-queue of read vecs
- - await on queue, obtain vec
- - move vec back to pool
-
-
-*/
-
 /// USB full-speed spec host.
 pub struct RdxUsbFsHost {
     iface: nusb::Interface,
     n_channels: u8,
-    // we need this secondary queue because gs_usb only has one rx queue for all channels
-    // so we need to split it up.
-    // it is the responsibility of the owner of GsUsbDevice to await on poll() until complete
-    //rx_queue: Vec<tokio::sync::mpsc::Sender<Vec<u8>>>,
     rx_queue: Vec<<AsyncRb<Heap<RdxUsbFsPacket>> as async_ringbuf::traits::Split>::Prod>
 }
 
@@ -112,6 +88,19 @@ impl RdxUsbFsHost {
 
         let handle = dev_info.open()?;
         handle.detach_kernel_driver(iface_idx).ok();
+        // TODO: properly introspect for our device
+        let cfg = handle.active_configuration().unwrap();
+        for iface in cfg.interfaces() {
+            eprintln!("iface number: {}", iface.interface_number());
+            for alt_stg in iface.alt_settings() {
+                eprintln!("\talt_stg idx: {}", alt_stg.alternate_setting());
+                for endpoint in alt_stg.endpoints() {
+                    eprintln!("\tep {}, {:?} ({})", endpoint.address(), endpoint.direction(), endpoint.max_packet_size());
+                }
+            }
+        }
+
+
         let iface = handle.claim_interface(iface_idx)?;
         let cfg = Self::get_device_info(&iface).await?;
         let icount = cfg.n_channels;
@@ -149,7 +138,6 @@ impl RdxUsbFsHost {
         while read_queue.pending() < n_transfers {
             read_queue.submit(RequestBuffer::new(RdxUsbFsPacket::SIZE))
         }
-
         loop {
             let buf = read_queue.next_complete().await.into_result()?;
             //println!("Received message: len={} {buf:?}", buf.len());
@@ -217,7 +205,7 @@ impl RdxUsbFsWritePoller {
         let mut buffer= Vec::with_capacity(64);
         while let Some(msg) = self.tx_queue.next().await {
             buffer.clear();
-            buffer.extend_from_slice(&msg.encode());
+            buffer.extend_from_slice(bytemuck::bytes_of(&msg));
             buffer = self.iface.bulk_out(ENDPOINT_OUT, buffer).await.into_result()?.reuse();
         }
         Ok(())

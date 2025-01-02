@@ -4,11 +4,19 @@
 
 
 /** Extended (full 29-bit) frame. This is set on practically all FRC-related messages. */
-#define RDXUSB_MESSAGE_FLAG_EXT 0x80000000
+#define RDXUSB_ARB_ID_FLAG_EXT 0x80000000
 /** RTR frame */
-#define RDXUSB_MESSAGE_FLAG_RTR 0x40000000
-/** Error frame */
-#define RDXUSB_MESSAGE_FLAG_ERR 0x20000000
+#define RDXUSB_ARB_ID_FLAG_RTR 0x40000000
+/** 
+ * Specifies the frame is specifically addressed to/from the device.
+ * 
+ * For messages from device to host, this means that the message in fact originates from the device, 
+ * and not any connected devices proxied through other buses.
+ * 
+ * For messages from host to device, the device will understand that the host message is meant for it,
+ * regardless of any configured device id bits (effectively ignoring the least significant 6 bits of the ID)
+ */
+#define RDXUSB_ARB_ID_FLAG_DEVICE 0x20000000
 
 /** The event loop has irrecoverably crashed. */
 #define RDXUSB_ERR_EVENT_LOOP_CRASHED -100

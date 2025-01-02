@@ -8,18 +8,6 @@ use tokio::runtime::Runtime;
 
 use crate::host::{RdxUsbFsChannel, RdxUsbFsHost, RdxUsbFsWriter, RdxUsbHostError};
 
-/*
-
-Architecture:
-
-Pollers:
-* They own an RdxUsbHost
-* They are responsible for polling the RdxUsbHost until a fault happens
-
-
-*/
-
-
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(i32)]
@@ -169,7 +157,6 @@ impl EventLoop {
             rt,
             hotplug_handle,
         }
-
     }
 
     pub fn update_open_device(&mut self, id: i32, device: OpenDevice) {
@@ -178,7 +165,9 @@ impl EventLoop {
     }
 
     pub fn remove_open_device(&mut self, id: i32) {
-        self.devices.get_mut(&id).unwrap().handle.take();
+        if let Some(d) = self.devices.get_mut(&id) {
+            d.handle.take();
+        }
     }
 
     pub fn acquire_open_device(&mut self, id: i32) -> Result<&mut OpenDevice, EventLoopError> {
@@ -224,7 +213,7 @@ pub async fn device_poller(
     close_on_dc: bool,
     capacity: usize,
 ) {
-    eprintln!("Device poller for task {id} started!");
+    log::trace!(target: "rdxusb", "Device poller for task {id} started!");
     loop {
         let dev_info = match device_info_in.changed().await {
             Ok(_) => {
@@ -235,18 +224,16 @@ pub async fn device_poller(
             }
             Err(_e) => { break; }
         };
-        eprintln!("poller: Acquired matching deviceinfo");
-        //let Some(dev_info) = device_info_in.recv().await
-
+        log::trace!(target: "rdxusb", "poller: Acquired matching deviceinfo");
 
         let device_id = dev_info.id();
         let (mut host, channels) = match RdxUsbFsHost::open_device(dev_info, capacity).await {
             Ok(a) => {
-                eprintln!("poller: Successfully opened device, opening write-poller");
+                log::trace!(target: "rdxusb", "poller: Successfully opened device, opening write-poller");
                 a
             }
             Err(e) => {
-                eprintln!("poller: Could not open device: {e:?}");
+                log::trace!(target: "rdxusb", "poller: Could not open device: {e:?}");
                 continue;
             }
         };
@@ -260,16 +247,23 @@ pub async fn device_poller(
             protocol: 0,
         };
         {
-            eprintln!("poller: Update open device");
             let mut event_loop = acquire_event_loop();
             event_loop.update_open_device(id, open_device);
         }
+
         // this will eventually error out on disconnect
         tokio::select! {
-            val = host.poll(32, true) => { val.ok(); }
-            val = write_poller.poll() => { val.ok(); }
-            // we need a semaphore here because oneshot channels won't live on repeat iterations
-            _val = shutdown.notified() => { return; }
+            val = host.poll(32, false) => {
+                log::trace!(target: "rdxusb", "Read poller exited early! {:?}", val.err());
+            }
+            val = write_poller.poll() => {
+                log::trace!(target: "rdxusb", "Write poller exited early! {:?}", val.err());
+            }
+            // we need a notifier here because oneshot channels won't live on repeat iterations
+            _val = shutdown.notified() => { 
+                log::trace!(target: "rdxusb", "Poller Shutdown requested");
+                return; 
+            }
         }
         {
             let mut event_loop = acquire_event_loop();
@@ -303,13 +297,13 @@ pub async fn hotplug() {
 }
 
 pub fn force_scan_devices(event_loop: EventLoopGuard) -> Result<EventLoopGuard, EventLoopError> {
-    eprintln!("Force scan devices triggered");
+    log::trace!(target: "rdxusb", "Force scan devices triggered");
     let Ok(list_device_iter) = nusb::list_devices() else { return Err(EventLoopError::CannotListDevices); };
     for device_info in list_device_iter {
-        eprintln!("Found device: {device_info:?}");
+        log::trace!(target: "rdxusb", "Found device: {device_info:?}");
         'device_loop: for device in event_loop.devices.values() {
             if device.matches_device_info(&device_info) {
-                eprintln!("Device matches deviceinfo, triggering hotplug");
+                log::trace!(target: "rdxusb", "Device matches deviceinfo, triggering hotplug");
                 device.device_info_out.send_replace(Some(device_info));
                 break 'device_loop;
             }
@@ -319,7 +313,7 @@ pub fn force_scan_devices(event_loop: EventLoopGuard) -> Result<EventLoopGuard, 
 }
 
 pub fn open_device(vid: u16, pid: u16, serial_number: Option<String>, close_on_dc: bool, capacity: usize) -> Result<i32, EventLoopError> {
-    eprintln!("Open device {vid:04x} {pid:04x} {serial_number:?} {close_on_dc}");
+    log::trace!(target: "rdxusb", "Open device {vid:04x} {pid:04x} {serial_number:?} {close_on_dc}");
     let mut event_loop = try_acquire_event_loop()?;
 
     let maybe_existing = event_loop.devices.iter_mut().find_map(|(handle, device)| {
@@ -328,7 +322,7 @@ pub fn open_device(vid: u16, pid: u16, serial_number: Option<String>, close_on_d
         } else { None }
     });
     if let Some(existing_handle) = maybe_existing {
-        eprintln!("Device already opened under handle: {existing_handle}");
+        log::trace!(target: "rdxusb", "Device already opened under handle: {existing_handle}");
         force_scan_devices(event_loop)?;
         return Ok(existing_handle);
     }
@@ -340,7 +334,7 @@ pub fn open_device(vid: u16, pid: u16, serial_number: Option<String>, close_on_d
     event_loop.next_handle += 1;
     let shutdown = Arc::new(tokio::sync::Notify::new());
 
-    eprintln!("Spawn device poller for new handle {handle}");
+    log::trace!(target: "rdxusb", "Spawn device poller for new handle {handle}");
     let device_poller_task = event_loop.rt.spawn(device_poller(handle, rx, shutdown.clone(), close_on_dc, capacity));
     let device_entry = Device {
         vid,
@@ -391,6 +385,7 @@ pub fn write_packets(handle_id: i32, packets: &[RdxUsbPacket]) -> Result<usize, 
             Err(_) => { break; }
         }
     }
+    
 
     Ok(packets_written)
 }
