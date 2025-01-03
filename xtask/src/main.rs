@@ -15,6 +15,7 @@ fn main() {
         Some("linuxx86-64") => build_maven(Target::LinuxX86_64),
         Some("linuxarm32") => build_maven(Target::LinuxArm32),
         Some("linuxarm64") => build_maven(Target::LinuxArm64),
+        Some("linuxsystemcore") => build_maven(Target::LinuxSystemCore),
         Some("windowsx86-64") => build_maven(Target::WindowsX86_64),
         Some("windowsarm64") => build_maven(Target::WindowsArm64),
         Some("osxuniversal") => build_maven(Target::OsxUniversal),
@@ -23,7 +24,7 @@ fn main() {
         }
 
         Some(..) | None => {
-            eprintln!("specify a valid target: {{linuxathena, linuxx86-64, linuxarm32, linuxarm64, windowx86-64, windowsarm64, osxuniversal}}");
+            eprintln!("specify a valid target: {{linuxathena, linuxsystemcore, linuxx86-64, linuxarm32, linuxarm64, windowx86-64, windowsarm64, osxuniversal}}");
             std::process::exit(-1);
         }
     }

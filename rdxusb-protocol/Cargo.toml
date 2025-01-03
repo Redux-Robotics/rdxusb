@@ -1,7 +1,11 @@
 [package]
 name = "rdxusb-protocol"
-version = "0.1.0"
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "RdxUSB protocol definitions for Redux Robotics devices"
+version = "0.1.1"
 edition = "2021"
 
 [dependencies]
-bytemuck = { version = "1.16.1", features = ["derive", "extern_crate_std"] }
+bytemuck = { version = "1.16.1", features = ["derive"] }

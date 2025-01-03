@@ -115,6 +115,47 @@ impl RdxUsbFsPacket {
 
     /// Should always be 64.
     pub const SIZE: usize = core::mem::size_of::<Self>();
+
+    pub fn encode(&self) -> &[u8; Self::SIZE] {
+        bytemuck::cast_ref(self)
+    }
+
+    pub fn from_buf(buf: [u8; Self::SIZE]) -> Self {
+        bytemuck::cast(buf)
+    }
+}
+
+impl RdxUsbPacket {
+    /// The message arbitration id
+    pub const fn id(&self) -> u32 {
+        self.arb_id & 0x1fff_ffff
+    }
+
+    /// Does the packet use extended (29-bit) IDs?
+    pub const fn extended(&self) -> bool {
+        self.arb_id & MESSAGE_ARB_ID_EXT != 0
+    }
+
+    /// Is the packet an RTR packet?
+    pub const fn rtr(&self) -> bool {
+        self.arb_id & MESSAGE_ARB_ID_RTR != 0
+    }
+
+    /// Is the packet a device packet?
+    pub const fn device(&self) -> bool {
+        self.arb_id & MESSAGE_ARB_ID_DEVICE != 0
+    }
+
+    /// Should always be 64.
+    pub const SIZE: usize = core::mem::size_of::<Self>();
+
+    pub fn into_array(self) -> [u8; Self::SIZE] {
+        unsafe { core::mem::transmute(self) }
+    }
+
+    pub fn from_buf(buf: [u8; Self::SIZE]) -> Self {
+        unsafe { core::mem::transmute(buf) }
+    }
 }
 
 /// Struct returned by the device info control request
@@ -135,6 +176,19 @@ pub struct RdxUsbDeviceInfo {
     pub reserved: [u8; 24]
 }
 
+impl RdxUsbDeviceInfo {
+    /// Should always be 32.
+    pub const SIZE: usize = core::mem::size_of::<Self>();
+
+    pub fn encode(&self) -> &[u8; Self::SIZE] {
+        bytemuck::cast_ref(self)
+    }
+
+    pub fn from_buf(buf: [u8; Self::SIZE]) -> Self {
+        bytemuck::cast(buf)
+    }
+}
+
 /// Control requests supported
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
 #[repr(u8)]
@@ -143,4 +197,4 @@ pub enum RdxUsbCtrl {
 }
 
 /// USB-Full Speed protocol version
-pub const PROTOCOL_VERSION_FS: u16 = 1;
+pub const PROTOCOL_VERSION_MAJOR_FS: u16 = 1;

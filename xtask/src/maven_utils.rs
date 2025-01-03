@@ -50,6 +50,7 @@ fn locate_roborio_toolchain() -> Option<PathBuf> {
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum Target {
     LinuxAthena,
+    LinuxSystemCore,
     WindowsX86_64,
     WindowsArm64,
     OsxUniversal,
@@ -119,6 +120,7 @@ impl OperatingSystem {
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum Architecture {
     Athena,
+    SystemCore,
     X86_64,
     Arm32,
     Arm64,
@@ -129,6 +131,7 @@ impl Architecture {
     pub const fn name(&self) -> &'static str {
         match self {
             Architecture::Athena => "athena",
+            Architecture::SystemCore => "systemcore",
             Architecture::X86_64 => "x86-64",
             Architecture::Arm32 => "arm32",
             Architecture::Arm64 => "arm64",
@@ -144,6 +147,11 @@ impl Target {
                 triple: "arm-unknown-linux-gnueabi",
                 os: OperatingSystem::Linux,
                 arch: Architecture::Athena,
+            },
+            Target::LinuxSystemCore => TargetInfo {
+                triple: "aarch64-unknown-linux-gnu",
+                os: OperatingSystem::Linux,
+                arch: Architecture::SystemCore,
             },
             Target::WindowsX86_64 => TargetInfo {
                 triple: "x86_64-pc-windows-msvc",

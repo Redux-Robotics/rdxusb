@@ -1,11 +1,18 @@
 [workspace]
 members = ["rdxusb-event-test", "rdxusb-protocol", "xtask"]
 
+[workspace.package]
+authors = ["guineawheek <guineawheek@gmail.com>"]
+repository = "https://github.com/Redux-Robotics/rdxusb"
+license = "MIT OR Apache-2.0"
+
 [package]
 name = "rdxusb"
 version = "2025.0.0"
 edition = "2021"
-authors = ["guineawheek <guineawheek@gmail.com>"]
+authors.workspace = true
+repository.workspace = true
+license.workspace = true
 
 [lib]
 name = "rdxusb"
