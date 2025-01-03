@@ -86,7 +86,21 @@ impl RdxUsbFsHost {
 
         let iface_idx = iface.interface_number();
 
-        let handle = dev_info.open()?;
+        let mut handle: RdxUsbHostResult<nusb::Device> = Err(RdxUsbHostError::UsbFault);
+        for _ in 0..3 {
+            handle = match dev_info.open() {
+                Ok(o) => { Ok(o) }
+                Err(e) => {
+                    // windows needs a sleep retry
+                    #[cfg(windows)]
+                    std::thread::sleep(std::time::Duration::from_millis(10));
+                    Err(e.into())
+                }
+            };
+            if handle.is_ok() { break; }
+        }
+        let handle = handle?;
+
         handle.detach_kernel_driver(iface_idx).ok();
         // TODO: properly introspect for our device
         let cfg = handle.active_configuration().unwrap();
