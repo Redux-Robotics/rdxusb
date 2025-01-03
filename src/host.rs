@@ -103,16 +103,17 @@ impl RdxUsbFsHost {
 
         handle.detach_kernel_driver(iface_idx).ok();
         // TODO: properly introspect for our device
-        let cfg = handle.active_configuration().unwrap();
-        for iface in cfg.interfaces() {
-            eprintln!("iface number: {}", iface.interface_number());
-            for alt_stg in iface.alt_settings() {
-                eprintln!("\talt_stg idx: {}", alt_stg.alternate_setting());
-                for endpoint in alt_stg.endpoints() {
-                    eprintln!("\tep {}, {:?} ({})", endpoint.address(), endpoint.direction(), endpoint.max_packet_size());
-                }
-            }
-        }
+        // we probably don't need to right now
+        //let cfg = handle.active_configuration().unwrap();
+        //for iface in cfg.interfaces() {
+        //    eprintln!("iface number: {}", iface.interface_number());
+        //    for alt_stg in iface.alt_settings() {
+        //        eprintln!("\talt_stg idx: {}", alt_stg.alternate_setting());
+        //        for endpoint in alt_stg.endpoints() {
+        //            eprintln!("\tep {}, {:?} ({})", endpoint.address(), endpoint.direction(), endpoint.max_packet_size());
+        //        }
+        //    }
+        //}
 
 
         let iface = handle.claim_interface(iface_idx)?;
