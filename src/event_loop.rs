@@ -141,7 +141,6 @@ pub struct EventLoop {
     pub devices: HashMap<i32, Device>,
     pub next_handle: i32,
     pub rt: Runtime,
-    pub hotplug_handle: tokio::task::JoinHandle<()>,
 }
 
 impl EventLoop {
@@ -150,12 +149,30 @@ impl EventLoop {
 
         // Enter the runtime so that `tokio::spawn` is available immediately.
         let _enter = rt.enter();
-        let hotplug_handle = rt.spawn(hotplug());
+
+        #[cfg(unix)]
+        let _hotplug_handle = rt.spawn(hotplug());
+
+        #[cfg(windows)]
+        {
+            // for whatever reason, hotplug isn't `Send`` on Windows so we have to do this nonsense.
+            // see https://github.com/kevinmehall/nusb/issues/104
+            let thread_rt = tokio::runtime::Builder::new_current_thread()
+                .enable_all()
+                .build()
+                .unwrap();
+
+            std::thread::spawn(move || {
+                let local = tokio::task::LocalSet::new();
+                local.spawn_local(hotplug());
+                thread_rt.block_on(local);
+            });
+        }
+
         Self {
             devices: HashMap::new(),
             next_handle: 0i32,
             rt,
-            hotplug_handle,
         }
     }
 
@@ -279,7 +296,7 @@ pub async fn device_poller(
 
 
 pub async fn hotplug() {
-    let mut hotplug_watcher = nusb::watch_devices().unwrap();
+    let mut hotplug_watcher = nusb::watch_devices().expect("rdxusb: Could not start hotplug task");
     while let Some(event) = hotplug_watcher.next().await {
         match event {
             nusb::hotplug::HotplugEvent::Connected(device_info) => {

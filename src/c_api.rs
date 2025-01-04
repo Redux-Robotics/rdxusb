@@ -221,7 +221,7 @@ pub extern "C" fn rdxusb_get_device_in_iterator(iter_id: u64, device_idx: u64, d
 
     device_entry.vid = device_ent.vendor_id();
     device_entry.pid = device_ent.product_id();
-    device_entry.bus_number = device_ent.bus_number();
+    device_entry.bus_number = 0; //device_ent.bus_number();
     device_entry.device_address = device_ent.device_address();
     0
 }
