@@ -8,7 +8,7 @@ license = "MIT OR Apache-2.0"
 
 [package]
 name = "rdxusb"
-version = "2025.0.0"
+version = "2025.0.1"
 edition = "2021"
 description = "Cross-platform library for accessing Redux Robotics devices over USB"
 authors.workspace = true
