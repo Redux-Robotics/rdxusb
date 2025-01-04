@@ -4,7 +4,7 @@ use rdxusb::{RdxUsbPacket, MESSAGE_ARB_ID_DEVICE, MESSAGE_ARB_ID_EXT};
 
 
 fn main() {
-    env_logger::init();
+    env_logger::init_from_env(env_logger::Env::new().default_filter_or("trace"));
     let handle = rdxusb::c_api::rdxusb_open_device(0x16d0, 0x1279, c"04-0-0000-000-E-1".as_ptr(), false, 48);
     if handle < 0 {
         panic!("could not open device: {handle}");
